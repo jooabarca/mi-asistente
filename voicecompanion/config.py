@@ -73,6 +73,14 @@ VOICES = {
     "openai": {"marin": "recomendada", "cedar": "recomendada", "alloy": "", "ash": "", "ballad": "", "coral": "",
                "echo": "", "sage": "", "shimmer": "", "verse": ""},
 }
+# Female / male as Google lists them for these voices: https://docs.cloud.google.com/text-to-speech/docs/chirp3-hd
+# (OpenAI doesn't publish genders for its voices, so they are shown without one.)
+_GEMINI_WOMEN = {"Achernar", "Aoede", "Autonoe", "Callirrhoe", "Despina", "Erinome", "Gacrux", "Kore", "Laomedeia",
+                 "Leda", "Pulcherrima", "Sulafat", "Vindemiatrix", "Zephyr"}
+VOICE_GENDERS = {
+    "gemini": {name: ("mujer" if name in _GEMINI_WOMEN else "hombre") for name in VOICES["gemini"]},
+    "openai": {},
+}
 
 
 class ConfigError(Exception):

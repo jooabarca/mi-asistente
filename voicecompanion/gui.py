@@ -19,7 +19,9 @@ from tkinter import messagebox
 import customtkinter as ctk
 
 from . import ui
-from .config import APP_NAME, CATEGORIES, CATEGORY_BY_NAME, VOICES, load_preferences, save_preference
+from .config import (
+    APP_NAME, CATEGORIES, CATEGORY_BY_NAME, VOICE_GENDERS, VOICES, load_preferences, save_preference,
+)
 from .logs import FreezeWatchdog, log
 from .memory import SOURCE_AUTO, SOURCE_MANUAL, MemoryItem, MemoryStore, normalize_due_at
 
@@ -130,6 +132,17 @@ class Tooltip:
         if self._tip is not None:
             self._tip.destroy()
             self._tip = None
+
+
+def voice_labels(provider: str) -> dict[str, str]:
+    """Menu label -> voice name, women first then men, e.g. 'Kore  ·  mujer, firme'."""
+    genders = VOICE_GENDERS.get(provider, {})
+    order = {"mujer": 0, "hombre": 1}
+    labels = {}
+    for name in sorted(VOICES[provider], key=lambda n: (order.get(genders.get(n), 2), n.lower())):
+        details = ", ".join(part for part in (genders.get(name), VOICES[provider][name]) if part)
+        labels[f"{name}  ·  {details}" if details else name] = name
+    return labels
 
 
 def initial_theme() -> str:
@@ -250,8 +263,7 @@ class MainWindow(ctk.CTk):
         self.shown_profile = None
 
         self._section_label(bar, "Voz", 12)
-        voices = VOICES[self.app.settings.provider]
-        self.voice_by_label = {(f"{name}  ·  {about}" if about else name): name for name, about in voices.items()}
+        self.voice_by_label = voice_labels(self.app.settings.provider)
         self.voice_menu = ctk.CTkOptionMenu(
             bar, values=list(self.voice_by_label), command=self._on_voice, height=38, corner_radius=19,
             font=self.font_body, fg_color=CARD, button_color=SELECTED, button_hover_color=BORDER,

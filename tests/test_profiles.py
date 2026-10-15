@@ -98,6 +98,19 @@ def test_choosing_a_voice_saves_it_and_starts_a_fresh_session(tmp_path, monkeypa
     assert _app(tmp_path, "Default").settings.gemini.voice == "Sulafat"  # remembered next time
 
 
+def test_voice_menu_shows_women_then_men():
+    from voicecompanion.config import VOICE_GENDERS
+    from voicecompanion.gui import voice_labels
+
+    genders = VOICE_GENDERS["gemini"]
+    assert list(genders.values()).count("mujer") == 14 and list(genders.values()).count("hombre") == 16
+    assert genders["Kore"] == "mujer" and genders["Puck"] == "hombre" and genders["Sulafat"] == "mujer"
+    labels = list(voice_labels("gemini"))
+    assert labels[0] == "Achernar  ·  mujer, suave" and labels[-1] == "Zubenelgenubi  ·  hombre, casual"
+    assert labels.index("Zephyr  ·  mujer, brillante") < labels.index("Achird  ·  hombre, amigable")
+    assert "marin  ·  recomendada" in voice_labels("openai")  # no official genders for OpenAI
+
+
 def test_window_profile_menu_uses_spanish_labels(tmp_path):
     pytest.importorskip("customtkinter")
     import queue
@@ -121,8 +134,8 @@ def test_window_profile_menu_uses_spanish_labels(tmp_path):
 
         voices = []
         app.select_voice = voices.append
-        assert window.voice_menu.get() == f"{app.settings.voice}  ·  firme"  # Kore by default
-        window._on_voice("Sulafat  ·  cálida")
+        assert window.voice_menu.get() == f"{app.settings.voice}  ·  mujer, firme"  # Kore by default
+        window._on_voice("Sulafat  ·  mujer, cálida")
         assert voices == ["Sulafat"]
     finally:
         window.closing = True
