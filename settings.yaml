@@ -1,0 +1,131 @@
+# VoiceCompanion settings. Edit, save, and restart the app.
+
+# Which AI service to use: gemini (cheaper, has a free tier) or openai.
+# Override for one run with:  python main.py --provider openai
+provider: gemini
+
+# Profile used at startup: a file name from /profiles without ".md" (or an alias).
+# Override it for one run with:  python main.py --profile EnglishCoach
+active_profile: Default
+
+# Extra length rule added to every profile, e.g. "Never answer with more than 25 words."
+max_response_length_hint: ""
+
+# Say a short hello when the app starts (skipped during quiet hours).
+greet_on_start: true
+
+# Go to sleep (disconnect, send nothing) after this many minutes without conversation.
+# Wake it with the Despertar button or the sleep hotkey. 0 = never.
+auto_sleep_minutes: 0
+
+gemini:
+  # Check https://ai.google.dev/gemini-api/docs/models for current Live models,
+  # e.g. gemini-3.8-live (default), gemini-3.8-live-extended-thinking (smarter, slower).
+  model: gemini-3.8-live
+  # Voices include Kore, Puck, Charon, Fenrir, Aoede, Leda, Orus, Zephyr and more
+  # (any Gemini TTS voice). Fixed for the whole session.
+  voice: Kore
+  # How much recent conversation it keeps and re-reads for every reply. Older parts are
+  # dropped. One minute of talking is roughly 1,700 tokens, so:
+  #   8000 = about the last 4-5 minutes (good for answering and commenting in the moment)
+  #   32000 = about the last 15-20 minutes (long, flowing conversations)
+  # Smaller = cheaper per reply and less load on the free-tier limit. Minimum 2000.
+  # (Things you ask it to remember are stored separately in memory.db and are not affected.)
+  max_context_tokens: 8000
+  # Google Search for checking facts. "auto" tries it on every start and quietly continues without it
+  # if your Gemini plan doesn't allow it (free keys don't; it turns on by itself if you enable billing).
+  # Wikipedia lookups work either way. Use off to never try.
+  google_search: auto
+
+openai:
+  # e.g. gpt-realtime-2.1 (best) or gpt-realtime-2.1-mini (cheaper).
+  model: gpt-realtime-2.1
+  # alloy, ash, ballad, coral, echo, sage, shimmer, verse, marin, cedar
+  voice: marin
+  speed: 1.0                      # 0.25 - 1.5
+  transcription_model: gpt-4o-mini-transcribe
+  transcription_language: null    # null = auto-detect, or e.g. "en" / "es"
+  # near_field for earbuds/headsets, far_field for a laptop or desk mic, null to disable.
+  noise_reduction: near_field
+
+# OpenAI only: hard cap on tokens per spoken answer (1-4096 or "inf").
+max_output_tokens: 400
+
+audio:
+  # null = Windows default device. Otherwise the number or part of the name
+  # shown by:  python main.py --list-devices
+  input_device: null
+  output_device: null
+  block_ms: 40
+  # Speakers echo the AI's voice back into the mic, so it "hears itself" and keeps
+  # interrupting itself. The echo guard sends silence while the AI speaks (you then
+  # can't interrupt it by voice). auto = on for speakers, off for headphones/earbuds.
+  echo_guard: auto              # auto, on or off
+  echo_tail_ms: 400             # keep guarding this long after it stops speaking
+
+# How the server decides you started / finished talking.
+turn_detection:
+  silence_duration_ms: 500      # pause length that ends your turn (both providers)
+  prefix_padding_ms: 300        # both providers
+  # Gemini only: low / high / null (default). Lower start = fewer false triggers from noise;
+  # lower end = waits longer before deciding you're done.
+  start_sensitivity: null
+  end_sensitivity: null
+  # OpenAI only:
+  type: server_vad              # server_vad or semantic_vad
+  threshold: 0.5                # 0.0-1.0; raise it if background noise triggers it
+  eagerness: auto               # semantic_vad only: low, medium, high, auto
+
+hotkeys:
+  # Global hotkeys (work while another window is focused). "m" and "q" also
+  # work when the VoiceCompanion console window is focused.
+  mute: ctrl+shift+m
+  sleep: ctrl+shift+f9          # sleep / wake
+  quit: ctrl+shift+x
+
+quiet_hours:
+  # During quiet hours: no greeting, and "proactive" profiles (FactChecker)
+  # only answer direct questions instead of interrupting with corrections.
+  enabled: false
+  start: "22:00"
+  end: "07:00"
+
+memory:
+  db_path: memory.db
+  # Folders the assistant may save to WITHOUT being asked. Things you explicitly ask
+  # it to remember are always saved. Folders: AboutMe (Sobre mí), Agenda, Learning
+  # (Aprendizaje), InterestingFact (Datos curiosos), Music (Canciones), Recommendation,
+  # Idea, Shopping (Compras), Correction, Opinion, Note. Use [] to only save on request.
+  auto_save_categories: [AboutMe, Correction, Recommendation]
+  # Besides everything in "Sobre mí" and upcoming Agenda items (always included),
+  # how many recent saved things it is reminded of at the start of each session.
+  inject_count: 10
+
+# Approximate prices in USD per 1M tokens, used for the cost estimate.
+# On Gemini's free tier your real cost is $0; the estimate shows what it would cost when paid.
+# Verify: https://ai.google.dev/gemini-api/docs/pricing  and  https://openai.com/api/pricing/
+pricing:
+  gemini-3.8-live:
+    text_input: 0.75
+    audio_input: 3.00
+    text_output: 4.50
+    audio_output: 12.00
+  gemini-3.8-live-extended-thinking:
+    text_input: 0.75
+    audio_input: 3.00
+    text_output: 4.50
+    audio_output: 12.00
+  gpt-realtime-2.1:
+    text_input: 4.00
+    cached_text_input: 0.40
+    audio_input: 32.00
+    cached_audio_input: 0.40
+    text_output: 24.00
+    audio_output: 64.00
+  gpt-realtime-2.1-mini:
+    text_input: 0.60
+    cached_text_input: 0.06
+    audio_input: 10.00
+    cached_audio_input: 0.30
+    text_output: 2.40
+    audio_output: 20.00

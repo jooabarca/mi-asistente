@@ -1,0 +1,22 @@
+# Secrets
+.env
+
+# Local data
+memory.db
+memory.db-journal
+memory.db-wal
+memory.db-shm
+*.log
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+
+# Choices made in the window
+preferences.json
+
+# Source logo (the app uses the processed copies in voicecompanion/)
+Glossy Coral Chat Orb Logo.png
