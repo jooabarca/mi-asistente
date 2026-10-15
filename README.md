@@ -65,6 +65,20 @@ The free tier is enough to try everything, within Google's rate limits. Free-tie
 1. Go to **https://platform.openai.com/api-keys**, create a key, and add credit under *Billing*. The API is pay-as-you-go, and there is no free tier for voice.
 2. In `.env`, set `OPENAI_API_KEY=sk-...`, and in `settings.yaml` set `provider: openai`.
 
+### Demo mode (no key)
+
+If `.env` has no Gemini key, the app runs in demo mode. Before each new conversation, it asks the token server (`gemini.token_url` in `settings.yaml`) for a Gemini session token. The downloadable version works this way, so the real key never reaches anyone's computer.
+
+The token server is a small Cloudflare Worker in `token-server/`. Its tokens work like this:
+- A token can start a conversation only within 2 minutes of being issued.
+- After that, it can only resume that same conversation, for up to 19 hours.
+- Each computer can get at most 10 tokens a minute.
+
+To manage it, run these from `token-server/`:
+- `npx wrangler deploy` publishes it.
+- `npx wrangler secret put GEMINI_API_KEY` changes the key.
+- To turn the demo off, set `DISABLED = "true"` in `wrangler.toml` and deploy, or delete that key in AI Studio.
+
 ## 2. Test each part (in this order)
 
 | Step | Command | What you should see |
@@ -118,6 +132,8 @@ Set `auto_sleep_minutes` in `settings.yaml` (e.g. 10) to make it fall asleep by 
 - `Ctrl+Shift+F9`: sleep / wake.
 - `Ctrl+Shift+X`: quit.
 - In `--console` mode you can also press `m`, `s` or `q` in the terminal, or `Ctrl+C`.
+
+While the app is open, other programs don't receive these combinations. For example, `Ctrl+Shift+M` mutes Mi Asistente, not Teams.
 
 The status bar at the bottom of the window counts the session's responses. When you quit, the session's token usage is stored in the `SessionLog` table.
 
@@ -276,11 +292,16 @@ voicecompanion/
   hotkeys.py                    global + console hotkeys
   errors.py, ui.py              shared errors, console output
 tests/                          offline pytest tests
+token-server/                   Cloudflare Worker that hands demo builds Gemini session tokens
+packaging/                      PyInstaller recipe for the downloadable Windows zip
 ```
+
+To build the downloadable version, run `pip install pyinstaller`, then `.venv\Scripts\python.exe packaging\build.py`. This creates `dist\Mi-Asistente-Windows.zip`. The build has no key; it runs in demo mode. Memories, preferences and logs go to `%APPDATA%\Mi Asistente`.
 
 ## 10. Troubleshooting
 
 - **"Google rejected the API key" / "OpenAI rejected the API key"**: check `.env`. The key must be on the line for the provider you're using.
+- **"The Mi Asistente demo server…"** (demo mode only): the token server is off, unreachable or rate-limited. Wait a minute, or put your own key in `.env`.
 - **"Gemini usage limit reached"**: you hit the free tier's rate limit. Wait a bit, or enable billing in Google AI Studio.
 - **"model … not found"**: the model name in `settings.yaml` is wrong or not enabled for your account.
 - **Connection drops**: the app reconnects automatically with backoff. Gemini resumes the same conversation; OpenAI reminds the model of the last few turns.
@@ -288,7 +309,7 @@ tests/                          offline pytest tests
 - **It doesn't stop when you talk over it**: the echo guard is on. With headphones, set `audio.echo_guard: off`.
 - **It cuts you off mid-sentence**: increase `turn_detection.silence_duration_ms` (e.g. 800). On Gemini you can also set `end_sensitivity: low`.
 - **Background noise triggers it**: on Gemini set `start_sensitivity: low`; on OpenAI raise `threshold` (e.g. 0.7). Or mute with the hotkey.
-- **Global hotkeys don't work**: some apps running as administrator block them. Use the buttons in the window instead.
+- **Global hotkeys don't work**: if the log says a combination "is already used by another program", another app took it first. Pick a different one in `settings.yaml`, or use the buttons in the window.
 - **The window doesn't open from `Mi Asistente.bat`**: run `python main.py --console` in PowerShell to see the error message.
 - **Something went wrong while it was running**: look in the `logs` folder:
   - `logs/mi-asistente.log` has every message and error. When you start from the shortcut there's no console, so this is where errors go.

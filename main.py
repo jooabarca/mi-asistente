@@ -95,7 +95,7 @@ def main(argv: list[str] | None = None) -> int:
         if profile is None:
             raise ConfigError(f"Profile '{wanted}' not found. Available: {', '.join(profiles)}")
 
-        api_key = load_api_key(settings.provider)
+        api_key = load_api_key(settings.provider, settings.gemini.token_url if settings.provider == "gemini" else "")
         memory = MemoryStore(settings.db_path)
 
         from voicecompanion.app import VoiceCompanionApp

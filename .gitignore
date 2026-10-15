@@ -21,3 +21,12 @@ preferences.json
 
 # Source logo (the app uses the processed copies in voicecompanion/)
 Glossy Coral Chat Orb Logo.png
+
+# Token server (Cloudflare Worker)
+token-server/node_modules/
+token-server/.wrangler/
+token-server/.dev.vars
+
+# Windows build (packaging/build.py)
+build/
+dist/

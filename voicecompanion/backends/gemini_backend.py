@@ -7,7 +7,11 @@ with GoAway and we resume the same conversation on a new connection with a resum
 
 from __future__ import annotations
 
+import asyncio
 import json
+import urllib.error
+import urllib.request
+import warnings
 
 import pydantic
 from google import genai
@@ -21,6 +25,9 @@ from .base import Backend
 
 INPUT_RATE = 16000
 INPUT_MIME = f"audio/pcm;rate={INPUT_RATE}"
+
+# The SDK calls session tokens experimental and "v1alpha only", but they work on v1beta (tested).
+warnings.filterwarnings("ignore", message="The SDK's ephemeral token support")
 
 
 def _schema(js: dict) -> types.Schema:
@@ -85,13 +92,38 @@ def classify_error(exc: Exception, model: str) -> BackendError:
     return BackendError(f"Gemini connection closed {detail}.")
 
 
+def fetch_token(url: str, timeout: float = 15) -> str:
+    """Ask the demo token server (token-server/) for a single-use Gemini token; the real key stays there."""
+    request = urllib.request.Request(url, data=b"{}", method="POST", headers={
+        "Content-Type": "application/json", "X-Mi-Asistente": "1", "User-Agent": "MiAsistente"})
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            token = json.loads(response.read()).get("token")
+    except urllib.error.HTTPError as exc:
+        try:
+            message = json.loads(exc.read()).get("error")
+        except (OSError, ValueError, AttributeError):
+            message = None
+        message = message or f"HTTP {exc.code}"
+        if exc.code in (403, 404, 503):  # turned off or not the right server: retrying won't help
+            raise FatalBackendError(f"The Mi Asistente demo server can't start a session: {message}") from exc
+        raise BackendError(f"The Mi Asistente demo server couldn't start a session: {message}") from exc
+    except (OSError, ValueError) as exc:
+        raise BackendError(f"Can't reach the Mi Asistente demo server ({exc}). Check your internet connection.") from exc
+    if not token:
+        raise BackendError("The Mi Asistente demo server sent no session token.")
+    return token
+
+
 class GeminiBackend(Backend):
     name = "Gemini"
     input_rate = INPUT_RATE
 
     def __init__(self, app):
         super().__init__(app)
-        self.client = genai.Client(api_key=app.api_key)
+        # Demo mode (no key): every connection gets a fresh single-use token from the token server.
+        self.token_url = "" if app.api_key else app.settings.gemini.token_url
+        self.client = genai.Client(api_key=app.api_key) if app.api_key else None
         self.resume_handle: str | None = None  # survives reconnects: same conversation continues
         self.session = None
         self._session_cm = None
@@ -101,7 +133,8 @@ class GeminiBackend(Backend):
         self._last_usage: types.UsageMetadata | None = None
         # Google Search grounding needs a paid (billing-enabled) key. Tried on each app start; if Google
         # refuses it, the rest of the run continues without it (Wikipedia lookups still work).
-        self.google_search = app.settings.gemini.google_search is not False
+        # The demo (token) key is a free one, so it isn't tried there: that saves a token and ~2 s per start.
+        self.google_search = app.settings.gemini.google_search is not False and not self.token_url
 
     def _reset_turn(self) -> None:
         self._user_text: list[str] = []
@@ -188,12 +221,25 @@ class GeminiBackend(Backend):
 
     async def _connect_once(self, include_history: bool) -> None:
         config = self.build_config(include_history=include_history)
+        # A resumed conversation must reconnect with the token that started it (a new token accepts the
+        # handle but starts from scratch); only a fresh conversation gets a new token.
+        resuming = bool(self.resume_handle)
+        if self.token_url and (self.client is None or not resuming):
+            token = await asyncio.to_thread(fetch_token, self.token_url)
+            self.client = genai.Client(api_key=token, http_options=types.HttpOptions(api_version="v1beta"))
         self._session_cm = self.client.aio.live.connect(model=self.model, config=config)
         try:
             self.session = await self._session_cm.__aenter__()  # returns once the server accepted the setup
         except Exception as exc:
             self._session_cm = None
-            raise classify_error(exc, self.model) from exc
+            error = classify_error(exc, self.model)
+            if self.token_url and isinstance(error, FatalBackendError) and "API key" in str(error):
+                if resuming:  # the conversation's token expired: _open starts a fresh one with a new token
+                    error = BackendError(f"The demo session token expired. ({exc})")
+                else:
+                    error = FatalBackendError(f"Google rejected the demo's session token; the demo may be turned "
+                                              f"off. ({exc})")
+            raise error from exc
 
     async def close(self) -> None:
         self._flush_turn(interrupted=self._in_turn)

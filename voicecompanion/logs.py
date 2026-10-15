@@ -18,9 +18,9 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
 from . import ui
-from .config import ROOT
+from .config import DATA_DIR
 
-LOG_DIR = ROOT / "logs"
+LOG_DIR = DATA_DIR / "logs"
 FREEZE_SECONDS = 5.0
 
 log = logging.getLogger("mi_asistente")

@@ -45,6 +45,9 @@ gemini:
   # if your Gemini plan doesn't allow it (free keys don't; it turns on by itself if you enable billing).
   # Wikipedia lookups work either way. Use off to never try.
   google_search: auto
+  # Demo mode: with no GEMINI_API_KEY in .env, each conversation gets a session token from this server
+  # (token-server/), which keeps the real key secret. A key in .env always wins. Empty = no demo mode.
+  token_url: https://mi-asistente-token.joseabarca.workers.dev/token
 
 openai:
   # e.g. gpt-realtime-2.1 (best) or gpt-realtime-2.1-mini (cheaper).

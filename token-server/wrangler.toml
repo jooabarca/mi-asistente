@@ -1,0 +1,14 @@
+name = "mi-asistente-token"
+main = "src/index.js"
+compatibility_date = "2025-09-01"
+
+[vars]
+DISABLED = "false" # "true" turns the demo off
+
+# At most 10 new conversations a minute per computer (IP). The app opens one when it starts or wakes up.
+[[ratelimits]]
+name = "PER_IP"
+namespace_id = "1001"
+simple = { limit = 10, period = 60 }
+
+# The Gemini key is a secret, never in this file: npx wrangler secret put GEMINI_API_KEY

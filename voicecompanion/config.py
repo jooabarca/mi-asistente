@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import sys
 import unicodedata
 from dataclasses import dataclass, field, fields, is_dataclass
 from datetime import datetime, time
@@ -14,8 +15,14 @@ from typing import Any
 import yaml
 from dotenv import load_dotenv
 
-ROOT = Path(__file__).resolve().parent.parent
 APP_NAME = "Mi Asistente"
+# The downloadable build (PyInstaller) keeps settings.yaml and profiles/ in its bundle folder, which may be
+# read-only, so what the app writes (memory, preferences, logs) and an optional .env go to %APPDATA%.
+FROZEN = bool(getattr(sys, "frozen", False))
+ROOT = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent.parent))
+DATA_DIR = Path(os.environ.get("APPDATA") or Path.home()) / APP_NAME if FROZEN else ROOT
+if FROZEN:
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 
 @dataclass(frozen=True)
@@ -141,6 +148,9 @@ class GeminiSettings:
     # Google Search grounding: "auto" tries it and quietly turns it off if the key's plan doesn't allow it
     # (free keys don't); false never asks for it. Wikipedia lookups work either way.
     google_search: Any = "auto"
+    # Demo builds have no key: with no GEMINI_API_KEY in .env, each session gets a single-use token from
+    # this server (token-server/), which keeps the real key secret. A key in .env always wins.
+    token_url: str = ""
 
 
 @dataclass
@@ -221,7 +231,7 @@ class Settings:
     @property
     def db_path(self) -> Path:
         path = Path(self.memory.db_path)
-        return path if path.is_absolute() else ROOT / path
+        return path if path.is_absolute() else DATA_DIR / path
 
 
 def _parse_hhmm(value: str) -> time:
@@ -302,7 +312,7 @@ def validate_settings(settings: Settings) -> None:
 API_KEY_NAMES = {"openai": ("OPENAI_API_KEY",), "gemini": ("GEMINI_API_KEY", "GOOGLE_API_KEY")}
 
 
-PREFERENCES_PATH = ROOT / "preferences.json"
+PREFERENCES_PATH = DATA_DIR / "preferences.json"
 
 
 def load_preferences() -> dict:
@@ -323,13 +333,16 @@ def save_preference(key: str, value) -> None:
         pass  # not being able to remember a preference is never worth crashing over
 
 
-def load_api_key(provider: str) -> str:
-    load_dotenv(ROOT / ".env")
+def load_api_key(provider: str, token_url: str = "") -> str:
+    """The key from .env; "" means demo mode (no key, session tokens come from token_url)."""
+    load_dotenv(DATA_DIR / ".env")
     names = API_KEY_NAMES[provider]
     for name in names:
         key = os.environ.get(name, "").strip()
         if key and "your" not in key.lower():  # skip the .env.example placeholders
             return key
+    if token_url:
+        return ""
     raise ConfigError(
         f"{names[0]} is missing (provider '{provider}'). Copy .env.example to .env and put your key in it."
     )
