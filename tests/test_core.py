@@ -115,7 +115,7 @@ def _executor(store, auto=("Correction",)):
 
 def test_tool_schemas_are_valid():
     names = [t["name"] for t in build_tool_schemas(["Default", "EnglishCoach"])]
-    assert names == ["SaveMemory", "SearchMemory", "SwitchProfile", "StaySilent", "LookUpFacts"]
+    assert names == ["SaveMemory", "SearchMemory", "SwitchProfile", "StaySilent", "LookUpFacts", "SetTranslationMode"]
 
 
 def test_save_memory_respects_auto_save_setting(store):
@@ -220,7 +220,7 @@ def test_gemini_config_is_accepted_by_the_sdk(store):
     assert "Pixel" in config.system_instruction
     assert config.speech_config.voice_config.prebuilt_voice_config.voice_name == settings.gemini.voice
     names = [fd.name for fd in config.tools[0].function_declarations]
-    assert names == ["SaveMemory", "SearchMemory", "SwitchProfile", "StaySilent", "LookUpFacts"]
+    assert names == ["SaveMemory", "SearchMemory", "SwitchProfile", "StaySilent", "LookUpFacts", "SetTranslationMode"]
     assert config.tools[1].google_search is not None  # requested; dropped automatically if the plan refuses it
     save = config.tools[0].function_declarations[0]
     assert save.parameters.type == types.Type.OBJECT

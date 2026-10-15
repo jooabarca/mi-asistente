@@ -170,6 +170,7 @@ class Settings:
     max_output_tokens: Any = 400
     greet_on_start: bool = True
     auto_sleep_minutes: int = 0  # 0 = never; otherwise go to sleep after this long without conversation
+    coach_nudge_seconds: int = 8  # coach modes: offer help after this long without an answer; 0 = never
     openai: OpenAISettings = field(default_factory=OpenAISettings)
     gemini: GeminiSettings = field(default_factory=GeminiSettings)
     audio: AudioSettings = field(default_factory=AudioSettings)
@@ -327,6 +328,7 @@ class Profile:
     label: str = ""  # name shown in the app, e.g. "Verificador de datos"
     conversational: bool = True  # False = background listener: only interjects, never chats
     order: int = 50  # position in the app's mode list (lower first)
+    coach: bool = False  # language coach: offers help when you go quiet, and can translate everything
     path: Path | None = None
 
 
@@ -356,6 +358,7 @@ def parse_profile(text: str, fallback_name: str, path: Path | None = None) -> Pr
         label=str(meta.get("label") or name),
         conversational=bool(meta.get("conversational", True)),
         order=int(meta.get("order", 50)),
+        coach=bool(meta.get("coach", False)),
         path=path,
     )
 

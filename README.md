@@ -10,7 +10,7 @@ Its listener modes don't chat. They listen in the background during meetings or 
 
 It's also a patient conversation partner for learning **English, Spanish, Portuguese or Japanese**. It talks with you in the language, corrects clear mistakes on the spot, and saves them in a *Correcciones* folder so you can review them.
 
-*Built with Python, asyncio, the Gemini Live API (google-genai) / OpenAI Realtime API, sounddevice + numpy, SQLite, customtkinter, and pytest (89 offline tests, including scripted server-event flows).*
+*Built with Python, asyncio, the Gemini Live API (google-genai) / OpenAI Realtime API, sounddevice + numpy, SQLite, customtkinter, and pytest (103 offline tests, including scripted server-event flows).*
 
 - **The "Mi Asistente" window:** a calm, warm design that follows Windows light or dark mode. It has:
   - a status card (Te escucho / Hablando / Micrófono en pausa / Descansando);
@@ -163,6 +163,10 @@ The app comes with seven modes (profiles):
 
 **How facts are checked:** before correcting something it isn't sure about (recent events, who holds a position now, exact numbers), the assistant looks it up on **Wikipedia**. This is free, needs no key, and shows as *🔎 Wikipedia «…»* in the conversation. What it looks up is sent to Wikipedia. With `gemini.google_search: auto` it also asks for **Google Search** on every start. Free Gemini keys don't allow that, so it quietly continues with Wikipedia only. If you enable billing on your Google account someday, Google Search turns on by itself (5,000 searches a month free, then $14 per 1,000).
 
+**Coach help.** The four coach modes offer help when you get stuck:
+- **When you go quiet:** if you don't answer for `coach_nudge_seconds` (8 by default) after the coach speaks, it checks in once, in *your* language. It offers to repeat more slowly, give a hint, or translate what it just said. It doesn't insist; it waits until you speak again.
+- **Translate everything:** if you needed translations more than once, it offers to translate everything it says. Say yes (or ask for it), or turn on **🔁 Traducir todo** in the window. After each sentence in the language you're practicing, it then adds the translation in yours. The choice is remembered per language.
+
 The two listener modes show a *"👂 No conversa"* badge in the window. They never greet, and the AI is told explicitly that it's a background listener and should stay silent unless it has a correction (or a valuable note).
 
 Each file in `profiles/` is one profile: YAML front matter followed by the system prompt in plain text.
@@ -201,6 +205,7 @@ You are a friendly English conversation partner...
 | `audio.echo_guard` | Starting value for speaker mode until you use the Altavoz / Audífonos switch in the window, which then wins. `auto` (default) is on for speakers and off when the output device name contains headphones, headset, buds and so on. `on` / `off` force it. Wired headphones in the PC's jack often still show up as "Speakers", so just use the switch. |
 | `turn_detection` | `silence_duration_ms` (raise it if it cuts you off) and `prefix_padding_ms` apply to both. Gemini also has `start_sensitivity` / `end_sensitivity` (`low` / `high`). OpenAI also has `type`, `threshold` and `eagerness`. |
 | `quiet_hours` | During these hours there's no greeting, and proactive profiles (FactChecker) only answer direct questions. |
+| `coach_nudge_seconds` | Coach modes: after this many seconds without an answer, it offers help once. `0` = never. |
 | `auto_sleep_minutes` | Fall asleep (disconnect) after this many minutes without conversation. `0` = never. |
 | `memory.auto_save_categories` | Folders the AI may save to **without being asked** (default: `AboutMe`, `Correction`, `Recommendation`). Explicit "remember…" requests are always saved. `[]` = only on request. |
 | `memory.inject_count` | Besides everything in *Sobre mí* and upcoming *Agenda* items (always included), how many recent saved things it is reminded of at the start. |
@@ -242,7 +247,7 @@ FROM MemoryItem
 ORDER BY CreatedAt DESC;
 ```
 
-The tools the AI can call are `SaveMemory(Category, Content, UserRequested, DueAt)`, `SearchMemory(Query)`, `LookUpFacts(Query, Language)` (Wikipedia), `SwitchProfile(ProfileName)` and `StaySilent()`. FactChecker uses `StaySilent()` to say nothing when it has nothing to correct.
+The tools the AI can call are `SaveMemory(Category, Content, UserRequested, DueAt)`, `SearchMemory(Query)`, `LookUpFacts(Query, Language)` (Wikipedia), `SetTranslationMode(On)` (coach modes), `SwitchProfile(ProfileName)` and `StaySilent()`. FactChecker uses `StaySilent()` to say nothing when it has nothing to correct.
 
 ## 9. Project structure
 

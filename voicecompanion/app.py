@@ -11,6 +11,8 @@ import re
 import time
 from datetime import datetime, timezone
 
+import numpy as np
+
 from . import ui
 from .audio import Microphone, Player, looks_like_headphones
 from .backends import create_backend
@@ -26,6 +28,18 @@ GREETING_PROMPT = "(Session started. Greet the user in at most six words, in the
 # Transcription markers such as "<no speech>" or "{pause}" are not words anyone said.
 _MARKUP = re.compile(r"<[^<>]*>|\{[^{}]*\}|\[(?:noise|silence|inaudible|music)\]", re.IGNORECASE)
 _EMPTY_TRANSCRIPTS = {"", "no speech", "nospeech"}
+NUDGE_PROMPT = (
+    "(The learner hasn't answered for {seconds} seconds after your last message, so they may not have understood. "
+    "Kindly check in, in one short sentence in THEIR OWN language (not the one being practiced): offer to repeat "
+    "more slowly, give a hint, or translate what you just said.)"
+)
+VOICE_RMS = 700  # mic level (16-bit PCM) that counts as someone talking, for coach nudges
+
+
+def is_voice(chunk: bytes) -> bool:
+    """Rough 'someone is talking' check on one mic chunk (loud enough to be speech, not room noise)."""
+    samples = np.frombuffer(chunk, dtype=np.int16)
+    return bool(samples.size) and float(np.sqrt(np.mean(samples.astype(np.float32) ** 2))) >= VOICE_RMS
 
 
 def clean_transcript(text: str) -> str:
@@ -61,6 +75,7 @@ class VoiceCompanionApp:
             settings.memory.auto_save_categories,
             get_profile_name=lambda: self.profile.name,
             switch_profile=self._switch_profile,
+            set_translation=lambda on: self._set_translation(on, announce=False),
         )
         self.tool_schemas = build_tool_schemas(list(profiles))
         self.usage = UsageTracker(settings.model, settings.pricing)
@@ -75,6 +90,9 @@ class VoiceCompanionApp:
         self.reconnect_requested = False
         self.pending_prompt: str | None = None  # said right after the next (re)connect
         self.last_activity = time.monotonic()
+        self.last_user_voice = 0.0  # time.monotonic() when the user was last heard (coach nudges)
+        self.nudged = False  # already offered help during the current silence
+        self.translate_all = {name for name in profiles if load_preferences().get(f"translate:{name}") is True}
         self.started_at = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
         self.backend = create_backend(self)
         self.player = Player(output_device)
@@ -120,6 +138,20 @@ class VoiceCompanionApp:
             memory.append("What you already know (from memory):\n" + summary)
         parts.append("\n".join(memory))
 
+        if self.profile.coach:
+            translating = self.profile.name in self.translate_all
+            parts.append(
+                "## Helping the learner\n"
+                "- If the learner seems stuck or confused, or asks what something means, offer help: repeat more "
+                "slowly, give a hint, or translate your last message into their own language.\n"
+                "- If they needed a translation more than once, offer to translate everything you say from now on. "
+                "If they accept or ask for it, call SetTranslationMode with On=true; if they want to stop, On=false.\n"
+                + ("- Translation mode is ON: after each of your sentences in the language being practiced, add a "
+                   "short translation into the learner's own language, in the same turn."
+                   if translating else
+                   "- Translation mode is OFF: don't translate unless they need it.")
+            )
+
         checking = [
             "## Checking facts",
             "Before correcting someone, or when asked about a fact you are not completely sure of (recent events, "
@@ -162,6 +194,7 @@ class VoiceCompanionApp:
         text = clean_transcript(text)
         if text:
             self.last_activity = time.monotonic()
+            self._heard_user()
             ui.user(text)
             self._remember_turn("User", text)
 
@@ -258,11 +291,13 @@ class VoiceCompanionApp:
         ui.info(f"Hotkeys: {hk.mute} = mute/unmute, {hk.sleep} = sleep/wake, {hk.quit} = quit.")
         self.running = True
         watchdog = asyncio.create_task(self._auto_sleep_watch())
+        nudger = asyncio.create_task(self._coach_nudge_watch())
         try:
             await self._connection_loop()
         finally:
             self.running = False
             watchdog.cancel()
+            nudger.cancel()
             hotkeys.stop()
             self.mic.stop()
             self.player.stop()
@@ -393,7 +428,35 @@ class VoiceCompanionApp:
                 continue
             if self.echo_guard and self.player.recently_played(tail_s):
                 chunk = bytes(len(chunk))  # silence keeps the stream steady for voice detection
+            elif is_voice(chunk):
+                self._heard_user()
             await self.backend.send_audio(chunk)
+
+    def _heard_user(self) -> None:
+        self.last_user_voice = time.monotonic()
+        self.nudged = False
+
+    def nudge_due(self, now: float) -> bool:
+        """Coach modes: the assistant spoke, then the learner stayed quiet long enough to offer help (once)."""
+        wait = self.settings.coach_nudge_seconds
+        if not (wait and self.profile.coach) or self.nudged:
+            return False
+        if self.sleeping or self.muted or not self.connection_ok or self.player.is_playing:
+            return False
+        if not any(who == "User" for who, _ in self.history[-20:]):
+            return False  # don't nudge right after the greeting, before any real exchange
+        assistant_spoke_last = self.player.last_output_time > self.last_user_voice
+        return assistant_spoke_last and now - self.player.last_output_time >= wait
+
+    async def _coach_nudge_watch(self) -> None:
+        while True:
+            await asyncio.sleep(0.5)
+            if self.nudge_due(time.monotonic()):
+                self.nudged = True
+                try:
+                    await self.backend.send_prompt(NUDGE_PROMPT.format(seconds=self.settings.coach_nudge_seconds))
+                except BackendError:
+                    pass  # the receive loop reports connection problems
 
     # ================================================================== controls (run on the event loop)
 
@@ -437,6 +500,34 @@ class VoiceCompanionApp:
         elif self.sleeping:
             self.pending_prompt = None  # no surprise hello when waking up later
 
+    def _set_translation(self, on: bool, announce: bool = True) -> str | None:
+        """Translate-everything mode for the current coach profile (remembered per language)."""
+        if not self.profile.coach:
+            return "Translation mode is only for the language coach modes."
+        name = self.profile.name
+        if (name in self.translate_all) == on:
+            return None
+        if on:
+            self.translate_all.add(name)
+        else:
+            self.translate_all.discard(name)
+        save_preference(f"translate:{name}", on)
+        ui.info(f"Translate everything: {'ON' if on else 'off'} ({self.profile.label}).")
+        if announce and self.connected:  # switched in the window: tell the model now, it confirms briefly
+            note = ("(The learner turned ON 'translate everything' in the app. From now on, after each of your "
+                    "sentences add a short translation into their own language. Confirm in a few words.)" if on else
+                    "(The learner turned OFF 'translate everything' in the app. Stop adding translations unless "
+                    "they need one. Confirm in a few words.)")
+
+            async def tell():
+                try:
+                    await self.backend.send_prompt(note)
+                except BackendError:
+                    pass
+
+            asyncio.ensure_future(tell())
+        return None
+
     def _select_profile(self, name: str) -> None:
         error = self._switch_profile(name)
         if error:
@@ -471,6 +562,9 @@ class VoiceCompanionApp:
 
     def select_voice(self, voice: str) -> None:
         self._call(self._select_voice, voice)
+
+    def set_translation(self, on: bool) -> None:
+        self._call(self._set_translation, on)
 
     def set_speaker_mode(self, speaker: bool) -> None:
         """Speaker mode = echo guard on (it can't hear itself); headset mode = you can interrupt it.

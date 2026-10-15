@@ -90,6 +90,20 @@ def build_tool_schemas(profile_names: list[str]) -> list[dict]:
                 "required": ["Query"],
             },
         },
+        {
+            "type": "function",
+            "name": "SetTranslationMode",
+            "description": (
+                "Language coach modes only: turn 'translate everything' on or off. When on, you add a short "
+                "translation into the learner's own language after each of your sentences. Call it when the "
+                "learner accepts your offer or asks for it (or asks to stop)."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {"On": {"type": "boolean"}},
+                "required": ["On"],
+            },
+        },
     ]
 
 
@@ -111,11 +125,13 @@ class ToolExecutor:
         auto_save_categories: list[str],
         get_profile_name: Callable[[], str],
         switch_profile: Callable[[str], str | None],
+        set_translation: Callable[[bool], str | None] | None = None,
     ):
         self.memory = memory
         self.auto_save_categories = set(auto_save_categories)
         self.get_profile_name = get_profile_name
         self.switch_profile = switch_profile  # returns error text, or None on success
+        self.set_translation = set_translation  # same convention
 
     def execute(self, name: str, arguments: str) -> ToolResult:
         try:
@@ -128,6 +144,7 @@ class ToolExecutor:
             "SwitchProfile": self._switch_profile,
             "StaySilent": self._stay_silent,
             "LookUpFacts": self._look_up_facts,
+            "SetTranslationMode": self._set_translation_mode,
         }.get(name)
         if handler is None:
             return ToolResult({"error": f"Unknown tool {name}."})
@@ -199,6 +216,18 @@ class ToolExecutor:
                         "Use these to verify; if they don't settle it, stay silent or say you're not sure.",
             },
             log=f"🔎 Wikipedia «{query}» → {found}",
+        )
+
+    def _set_translation_mode(self, args: dict) -> ToolResult:
+        on = bool(args.get("On", False))
+        error = self.set_translation(on) if self.set_translation else "Not available."
+        if error:
+            return ToolResult({"ok": False, "error": error})
+        return ToolResult(
+            {"ok": True, "translate_everything": on,
+             "note": "From now on add a short translation after each sentence." if on else
+                     "Stop adding translations unless they need one."},
+            log=f"🔁 Traducir todo: {'activado' if on else 'desactivado'}",
         )
 
     def _stay_silent(self, args: dict) -> ToolResult:

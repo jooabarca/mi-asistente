@@ -191,6 +191,10 @@ class MainWindow(ctk.CTk):
         self.profile_menu.grid(row=9, column=0, padx=18, pady=(4, 0), sticky="ew")
         self.listener_badge = ctk.CTkLabel(bar, text="👂  No conversa: solo escucha y avisa", font=self.font_small,
                                            text_color=TEXT, fg_color=("#ECE6F7", "#332D40"), corner_radius=12)
+        self.translate_switch = ctk.CTkSwitch(
+            bar, text="🔁  Traducir todo lo que dice", font=self.font_small, text_color=TEXT,
+            progress_color=TERRACOTTA, button_color=WHITE, button_hover_color=CREAM, fg_color=BORDER,
+            command=lambda: self.app.set_translation(bool(self.translate_switch.get())))
         self.profile_about = ctk.CTkLabel(bar, text="", font=self.font_small, text_color=MUTED, wraplength=225,
                                           justify="left")
         self.profile_about.grid(row=11, column=0, padx=24, pady=(6, 0), sticky="w")
@@ -218,6 +222,9 @@ class MainWindow(ctk.CTk):
 
     def _update_profile(self) -> None:
         profile = self.app.profile
+        translating = profile.name in self.app.translate_all
+        if profile.coach and bool(self.translate_switch.get()) != translating:
+            (self.translate_switch.select if translating else self.translate_switch.deselect)()  # changed by voice
         if self.shown_profile is profile:
             return
         self.shown_profile = profile
@@ -228,6 +235,10 @@ class MainWindow(ctk.CTk):
             self.listener_badge.grid_remove()
         else:
             self.listener_badge.grid(row=10, column=0, padx=18, pady=(8, 0), sticky="w", ipadx=10, ipady=3)
+        if profile.coach:
+            self.translate_switch.grid(row=10, column=0, padx=22, pady=(10, 0), sticky="w")
+        else:
+            self.translate_switch.grid_remove()
 
     def _section_label(self, parent, text: str, row: int) -> None:
         ctk.CTkLabel(parent, text=text, font=self.font_small, text_color=MUTED).grid(

@@ -18,6 +18,10 @@ greet_on_start: true
 # Wake it with the Despertar button or the sleep hotkey. 0 = never.
 auto_sleep_minutes: 0
 
+# Language coach modes: if you don't answer for this many seconds after the coach speaks, it offers
+# help once, in your language (repeat slower, a hint, or a translation). 0 = never.
+coach_nudge_seconds: 8
+
 gemini:
   # Check https://ai.google.dev/gemini-api/docs/models for current Live models,
   # e.g. gemini-3.8-live (default), gemini-3.8-live-extended-thinking (smarter, slower).
