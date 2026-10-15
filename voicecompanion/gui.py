@@ -10,14 +10,16 @@ import asyncio
 import queue
 import sys
 import threading
+import time
 from datetime import datetime
 from pathlib import Path
+import tkinter
 from tkinter import messagebox
 
 import customtkinter as ctk
 
 from . import ui
-from .config import APP_NAME, CATEGORIES, CATEGORY_BY_NAME, VOICES
+from .config import APP_NAME, CATEGORIES, CATEGORY_BY_NAME, VOICES, load_preferences, save_preference
 from .logs import FreezeWatchdog, log
 from .memory import SOURCE_AUTO, SOURCE_MANUAL, MemoryItem, MemoryStore, normalize_due_at
 
@@ -58,10 +60,8 @@ STATES = {
     "error": ("Algo salió mal", "Mira el mensaje de error.", ("#F7E0DF", "#402D2C"), ROSE),
 }
 DAYS = ["lun", "mar", "mié", "jue", "vie", "sáb", "dom"]
-DAYS_LONG = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"]
 MONTHS = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"]
-MONTHS_LONG = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre",
-               "octubre", "noviembre", "diciembre"]
+VIEW_CHAT, VIEW_THINGS = "💬  Conversación", "🗂  Mis cosas"
 SOURCES = {"UserRequest": "lo pediste tú", SOURCE_AUTO: "lo guardé yo", SOURCE_MANUAL: "añadido a mano"}
 MODE_SPEAKER, MODE_HEADSET = "🔊 Altavoz", "🎧 Audífonos"
 MAX_ITEMS_SHOWN = 200
@@ -89,19 +89,59 @@ def format_date(value: str | None, with_weekday: bool = False) -> str:
     return text
 
 
-def greeting(now: datetime | None = None) -> str:
-    hour = (now or datetime.now()).hour
-    if 5 <= hour < 12:
-        return "Buenos días ☀"
-    if 12 <= hour < 20:
-        return "Buenas tardes 🌿"
-    return "Buenas noches 🌙"
+class Tooltip:
+    """A small hint that appears after hovering a widget for a moment (customtkinter has none)."""
+
+    def __init__(self, widget, text: str, delay_ms: int = 450):
+        self.widget, self.text, self.delay_ms = widget, text, delay_ms
+        self._after = None
+        self._tip = None
+        widget.bind("<Enter>", self._schedule, add="+")
+        widget.bind("<Leave>", self._hide, add="+")
+        widget.bind("<ButtonPress>", self._hide, add="+")
+
+    def _schedule(self, _event=None) -> None:
+        self._cancel()
+        self._after = self.widget.after(self.delay_ms, self._show)
+
+    def _cancel(self) -> None:
+        if self._after is not None:
+            self.widget.after_cancel(self._after)
+            self._after = None
+
+    def _show(self) -> None:
+        self._after = None
+        if self._tip is not None or not self.widget.winfo_exists():
+            return
+        x = self.widget.winfo_rootx() + 16
+        y = self.widget.winfo_rooty() + self.widget.winfo_height() + 6
+        dark = ctk.get_appearance_mode() == "Dark"
+        background, foreground = (TEXT[1], CARD[1]) if dark else (TEXT[0], CARD[0])
+        # A plain Tk window: customtkinter's toplevels hide and re-show themselves while setting up on Windows.
+        self._tip = tkinter.Toplevel(self.widget)
+        self._tip.wm_overrideredirect(True)
+        self._tip.wm_attributes("-topmost", True)
+        self._tip.wm_geometry(f"+{x}+{y}")
+        tkinter.Label(self._tip, text=self.text, bg=background, fg=foreground, font=("Segoe UI", 10),
+                      padx=10, pady=5).pack()
+
+    def _hide(self, _event=None) -> None:
+        self._cancel()
+        if self._tip is not None:
+            self._tip.destroy()
+            self._tip = None
+
+
+def initial_theme() -> str:
+    """Light or dark as chosen with the switch, otherwise follow Windows."""
+    theme = load_preferences().get("theme")
+    return theme if theme in ("light", "dark") else "system"
 
 
 class MainWindow(ctk.CTk):
     def __init__(self, app, memory: MemoryStore, events: "queue.Queue", worker: threading.Thread | None,
                  result: dict, watchdog: FreezeWatchdog | None = None):
-        ctk.set_appearance_mode("system")
+        ctk.set_appearance_mode(initial_theme())
         super().__init__(fg_color=CREAM)
         self.app = app
         self.memory = memory
@@ -123,7 +163,6 @@ class MainWindow(ctk.CTk):
         self.minsize(960, 700)
         self.protocol("WM_DELETE_WINDOW", self._on_close)
         family = "Segoe UI"
-        self.font_hello = ctk.CTkFont(family=family, size=28, weight="bold")
         self.font_title = ctk.CTkFont(family=family, size=22, weight="bold")
         self.font_heading = ctk.CTkFont(family=family, size=20, weight="bold")
         self.font_state = ctk.CTkFont(family=family, size=18, weight="bold")
@@ -174,6 +213,12 @@ class MainWindow(ctk.CTk):
         self.sleep_button.grid(row=3, column=0, padx=18, pady=6, sticky="ew")
         self.wake_button = ctk.CTkButton(bar, text="☀  Despertar", command=self.app.wake, **button)
         self.wake_button.grid(row=4, column=0, padx=18, pady=6, sticky="ew")
+        hk = self.app.settings.hotkeys
+        self.tooltips = [
+            Tooltip(self.mute_button, f"Atajo: {hk.mute.title()}"),
+            Tooltip(self.sleep_button, f"Atajo: {hk.sleep.title()} (descansar / despertar)"),
+            Tooltip(self.wake_button, f"Atajo: {hk.sleep.title()} (descansar / despertar)"),
+        ]
 
         self._section_label(bar, "¿Cómo me escuchas?", 5)
         self.mode_switch = ctk.CTkSegmentedButton(
@@ -261,34 +306,54 @@ class MainWindow(ctk.CTk):
 
     def _build_main(self) -> None:
         main = ctk.CTkFrame(self, fg_color=CREAM)
-        main.grid(row=0, column=1, padx=26, pady=(22, 20), sticky="nsew")
+        main.grid(row=0, column=1, padx=26, pady=(22, 10), sticky="nsew")
         main.grid_columnconfigure(0, weight=1)
         main.grid_rowconfigure(1, weight=1)
 
-        head = ctk.CTkFrame(main, fg_color=CREAM)
-        head.grid(row=0, column=0, sticky="ew")
-        head.grid_columnconfigure(1, weight=1)
-        self.hello = ctk.CTkLabel(head, text=greeting(), font=self.font_hello, text_color=TEXT)
-        self.hello.grid(row=0, column=0, sticky="w")
-        now = datetime.now()
-        ctk.CTkLabel(head, text=f"{DAYS_LONG[now.weekday()]} {now.day} de {MONTHS_LONG[now.month - 1]}",
-                     font=self.font_body, text_color=MUTED).grid(row=1, column=0, sticky="w")
-        self.usage_label = ctk.CTkLabel(head, text="", font=self.font_small, text_color=MUTED, justify="right")
-        self.usage_label.grid(row=0, column=1, sticky="e")
-        hk = self.app.settings.hotkeys
-        ctk.CTkLabel(head, text=f"{hk.mute.title()} pausar micrófono  ·  {hk.sleep.title()} descansar",
-                     font=self.font_small, text_color=MUTED).grid(row=1, column=1, sticky="e")
+        # Top bar: the two views on the left, light/dark on the right.
+        top = ctk.CTkFrame(main, fg_color=CREAM)
+        top.grid(row=0, column=0, sticky="ew")
+        top.grid_columnconfigure(1, weight=1)
+        self.view_switch = ctk.CTkSegmentedButton(
+            top, values=[VIEW_CHAT, VIEW_THINGS], command=self.show_view, height=40, corner_radius=20,
+            font=self.font_button, fg_color=SAND, selected_color=TERRACOTTA, selected_hover_color=TERRACOTTA_DARK,
+            unselected_color=SAND, unselected_hover_color=SELECTED, text_color=TEXT)
+        self.view_switch.grid(row=0, column=0, sticky="w")
+        self.theme_switch = ctk.CTkSwitch(
+            top, text="🌙  Modo oscuro", font=self.font_body, text_color=TEXT, command=self._on_theme,
+            progress_color=LAVENDER, button_color=WHITE, button_hover_color=CREAM, fg_color=BORDER)
+        self.theme_switch.grid(row=0, column=2, sticky="e")
+        if ctk.get_appearance_mode() == "Dark":
+            self.theme_switch.select()
 
-        self.tabs = ctk.CTkTabview(
-            main, corner_radius=24, fg_color=CARD, border_width=1, border_color=BORDER,
-            segmented_button_fg_color=SAND, segmented_button_selected_color=TERRACOTTA,
-            segmented_button_selected_hover_color=TERRACOTTA_DARK, segmented_button_unselected_color=SAND,
-            segmented_button_unselected_hover_color=SELECTED, segmented_button_font=self.font_button,
-            text_color=TEXT)
-        self.tabs.grid(row=1, column=0, pady=(14, 0), sticky="nsew")
-        self._build_chat(self.tabs.add("💬  Conversación"))
-        self._build_things(self.tabs.add("🗂  Mis cosas"))
-        self.tabs.set("💬  Conversación")
+        # The current view, in one rounded card.
+        content = ctk.CTkFrame(main, corner_radius=24, fg_color=CARD, border_width=1, border_color=BORDER)
+        content.grid(row=1, column=0, pady=(14, 0), sticky="nsew")
+        content.grid_columnconfigure(0, weight=1)
+        content.grid_rowconfigure(0, weight=1)
+        self.views = {VIEW_CHAT: ctk.CTkFrame(content, fg_color=CARD), VIEW_THINGS: ctk.CTkFrame(content, fg_color=CARD)}
+        self._build_chat(self.views[VIEW_CHAT])
+        self._build_things(self.views[VIEW_THINGS])
+        self.show_view(VIEW_CHAT)
+
+        # Status bar at the bottom, like a spreadsheet's row count.
+        self.usage_label = ctk.CTkLabel(main, text="", font=self.font_small, text_color=MUTED)
+        self.usage_label.grid(row=2, column=0, pady=(6, 0), sticky="e")
+
+    def show_view(self, name: str) -> None:
+        """Show 'Conversación' or 'Mis cosas'."""
+        for key, frame in self.views.items():
+            if key == name:
+                frame.grid(row=0, column=0, padx=10, pady=12, sticky="nsew")
+            else:
+                frame.grid_remove()
+        if self.view_switch.get() != name:
+            self.view_switch.set(name)
+
+    def _on_theme(self) -> None:
+        mode = "dark" if self.theme_switch.get() else "light"
+        ctk.set_appearance_mode(mode)
+        save_preference("theme", mode)
 
     def _scroll_frame(self, parent, **kwargs) -> ctk.CTkScrollableFrame:
         # Explicit colors everywhere: "transparent" inside scrollable frames keeps the old colors
@@ -552,7 +617,9 @@ class MainWindow(ctk.CTk):
         voice_label = self._voice_label(self.app.settings.voice)
         if self.voice_menu.get() != voice_label:
             self.voice_menu.set(voice_label)
-        self._set(self.hello, "hello", text=greeting())
+        dark = ctk.get_appearance_mode() == "Dark"  # follows Windows when no choice was saved
+        if bool(self.theme_switch.get()) != dark:
+            (self.theme_switch.select if dark else self.theme_switch.deselect)()
 
         responses = self.app.usage.totals.responses
         self._set(self.usage_label, "usage", text=f"Esta sesión: {responses} respuesta{'' if responses == 1 else 's'}")
@@ -575,6 +642,20 @@ class MainWindow(ctk.CTk):
             self.destroy()
         else:
             self.after(100, lambda: self._wait_for_worker(tries - 1))
+
+
+def open_main_window(*args, attempts: int = 3) -> MainWindow:
+    """Create the window, retrying a couple of times: on this PC Tcl/Tk occasionally fails to read its own
+    library files while starting ("couldn't read file …init.tcl / en.msg"), which used to close the app silently."""
+    for attempt in range(1, attempts + 1):
+        try:
+            return MainWindow(*args)
+        except tkinter.TclError as exc:
+            log.warning("Window failed to start (attempt %d of %d): %s", attempt, attempts, exc)
+            if attempt == attempts or "display" in str(exc).lower():
+                raise
+            time.sleep(0.3)
+    raise AssertionError("unreachable")
 
 
 def run_gui(app, memory: MemoryStore) -> int:
@@ -600,7 +681,7 @@ def run_gui(app, memory: MemoryStore) -> int:
     worker = threading.Thread(target=conversation, name="conversation", daemon=True)
     worker.start()
     watchdog = FreezeWatchdog()
-    window = MainWindow(app, memory, events, worker, result, watchdog)
+    window = open_main_window(app, memory, events, worker, result, watchdog)
     watchdog.start()
     window.mainloop()
     watchdog.stop()

@@ -86,6 +86,67 @@ def test_listener_modes_show_only_the_assistants_notes(tmp_path):
         app.memory.close()
 
 
+def test_top_bar_views_theme_switch_and_status_bar(tmp_path):
+    import customtkinter as ctk
+
+    from voicecompanion.config import load_preferences
+    from voicecompanion.gui import VIEW_CHAT, VIEW_THINGS
+
+    app, window = _window(tmp_path, "Default")
+    try:
+        window._tick()
+        assert window.views[VIEW_CHAT].winfo_manager() == "grid"
+        assert window.views[VIEW_THINGS].winfo_manager() == ""
+        window.show_view(VIEW_THINGS)  # the "Mis cosas" button
+        assert window.views[VIEW_THINGS].winfo_manager() == "grid" and window.views[VIEW_CHAT].winfo_manager() == ""
+
+        window.theme_switch.select()
+        window._on_theme()
+        assert ctk.get_appearance_mode() == "Dark" and load_preferences()["theme"] == "dark"
+        window.theme_switch.deselect()
+        window._on_theme()
+        assert ctk.get_appearance_mode() == "Light" and load_preferences()["theme"] == "light"
+
+        app.usage.add(text_input=10)
+        window._tick()
+        assert window.usage_label.cget("text") == "Esta sesión: 1 respuesta"
+        assert int(window.usage_label.grid_info()["row"]) == 2  # bottom status bar, below the content
+
+        tips = {tip.widget: tip.text for tip in window.tooltips}
+        assert tips[window.mute_button] == "Atajo: Ctrl+Shift+M"
+        assert "Ctrl+Shift+F9" in tips[window.sleep_button]
+        window.tooltips[0]._show()
+        assert window.tooltips[0]._tip is not None
+        window.tooltips[0]._hide()
+        assert window.tooltips[0]._tip is None
+    finally:
+        window.closing = True
+        window.destroy()
+        app.memory.close()
+
+
+def test_window_start_is_retried_after_a_tcl_read_error(monkeypatch):
+    import tkinter
+
+    from voicecompanion import gui
+
+    attempts = []
+
+    def flaky_window(*args):
+        attempts.append(args)
+        if len(attempts) < 3:
+            raise tkinter.TclError('couldn\'t read file ".../tk8.6/msgs/en.msg": no such file or directory')
+        return "window"
+
+    monkeypatch.setattr(gui, "MainWindow", flaky_window)
+    monkeypatch.setattr(gui.time, "sleep", lambda s: None)
+    assert gui.open_main_window("app") == "window" and len(attempts) == 3
+    attempts.clear()
+    monkeypatch.setattr(gui, "MainWindow", lambda *a: (_ for _ in ()).throw(tkinter.TclError("still broken")))
+    with pytest.raises(tkinter.TclError):
+        gui.open_main_window("app")  # gives up after 3 tries and reports it
+
+
 def test_window_keeps_refreshing_after_an_error(tmp_path, monkeypatch):
     app, window = _window(tmp_path, "Default")
     try:

@@ -18,15 +18,12 @@ def open_window(*args):
     """Create the app window, skipping only when there is really no screen (any other Tk error fails the test)."""
     import tkinter
 
-    from voicecompanion.gui import MainWindow
+    from voicecompanion.gui import open_main_window
 
-    for attempt in range(3):
-        try:
-            return MainWindow(*args)
-        except tkinter.TclError as exc:
-            if "display" in str(exc).lower():
-                pytest.skip("no display")
-            # Creating many Tk windows in one test process sometimes fails to read Tcl's init.tcl on Windows
-            # ("couldn't read file ... No error"); the app itself only ever creates one window.
-            if "init.tcl" not in str(exc) or attempt == 2:
-                raise
+    try:
+        # Retries the occasional Tcl/Tk library-read failure on startup, like the app does.
+        return open_main_window(*args, attempts=5)
+    except tkinter.TclError as exc:
+        if "display" in str(exc).lower():
+            pytest.skip("no display")
+        raise

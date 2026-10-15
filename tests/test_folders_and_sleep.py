@@ -206,24 +206,21 @@ def _texts(widget):
 def test_window_builds_and_shows_saved_things(tmp_path, monkeypatch):
     pytest.importorskip("customtkinter")
     import queue
-    from datetime import datetime
 
     from conftest import open_window
 
     from voicecompanion import config
     from voicecompanion.app import VoiceCompanionApp
-    from voicecompanion.gui import MODE_HEADSET, MODE_SPEAKER, format_date, greeting
+    from voicecompanion.gui import MODE_HEADSET, MODE_SPEAKER, format_date
 
     monkeypatch.setattr(config, "PREFERENCES_PATH", tmp_path / "preferences.json")
     assert format_date("2026-10-16T10:00", with_weekday=True) == "vie 16 oct 10:00"
-    assert greeting(datetime(2026, 1, 1, 9)).startswith("Buenos días")
-    assert greeting(datetime(2026, 1, 1, 23)).startswith("Buenas noches")
     settings = load_settings()
     profiles = load_profiles()
     memory = MemoryStore(tmp_path / "m.db")
     memory.save("Music", "Bohemian Rhapsody - Queen", "Default", "UserRequest")
     app = VoiceCompanionApp(settings, "key", profiles, profiles["Default"], memory)
-    window = open_window(app, memory, queue.Queue(), None, {})
+    window = open_window(app, memory, queue.Queue(), None, {})  # retries rare Tcl startup read errors
     try:
         window.update()
         window._select_folder("Music")

@@ -12,9 +12,11 @@ It's also a patient conversation partner for learning **English, Spanish, Portug
 
 *Built with Python, asyncio, the Gemini Live API (google-genai) / OpenAI Realtime API, sounddevice + numpy, SQLite, customtkinter, and pytest (103 offline tests, including scripted server-event flows).*
 
-- **The "Mi Asistente" window:** a calm, warm design that follows Windows light or dark mode. It has:
+- **The "Mi Asistente" window:** a calm, warm design. It follows Windows light or dark mode until you pick one with the **🌙 Modo oscuro** switch (top right). It has:
+  - **Conversación / Mis cosas** buttons at the top;
   - a status card (Te escucho / Hablando / Micrófono en pausa / Descansando);
-  - **Pausar micrófono**, **Descansar** and **Despertar** buttons;
+  - **Pausar micrófono**, **Descansar** and **Despertar** buttons, which show their keyboard shortcut when you hover over them;
+  - a session counter in a small status bar at the bottom;
   - an **Altavoz / Audífonos** switch;
   - a personality (profile) selector;
   - the conversation as chat bubbles;
@@ -117,7 +119,9 @@ Set `auto_sleep_minutes` in `settings.yaml` (e.g. 10) to make it fall asleep by 
 - `Ctrl+Shift+X`: quit.
 - In `--console` mode you can also press `m`, `s` or `q` in the terminal, or `Ctrl+C`.
 
-The window shows the session's token usage. When you quit, it is also stored in the `SessionLog` table.
+The status bar at the bottom of the window counts the session's responses. When you quit, the session's token usage is stored in the `SessionLog` table.
+
+In the listener modes, the conversation view shows only the assistant's notes (corrections, counterpoints, facts), not every sentence spoken in the meeting.
 
 ## 4. Gemini vs OpenAI
 
@@ -285,4 +289,7 @@ tests/                          offline pytest tests
 - **Background noise triggers it**: on Gemini set `start_sensitivity: low`; on OpenAI raise `threshold` (e.g. 0.7). Or mute with the hotkey.
 - **Global hotkeys don't work**: some apps running as administrator block them. Use the buttons in the window instead.
 - **The window doesn't open from `Mi Asistente.bat`**: run `python main.py --console` in PowerShell to see the error message.
+- **Something went wrong while it was running**: look in the `logs` folder:
+  - `logs/mi-asistente.log` has every message and error. When you start from the shortcut there's no console, so this is where errors go.
+  - `logs/freezes.log` appears only if the window stops responding for more than 5 seconds. It records what every part of the app was doing at that moment.
 - **Mic is silent in `--test-audio`**: open Windows Settings → Privacy & security → Microphone, and allow desktop apps.
