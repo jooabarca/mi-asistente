@@ -16,7 +16,7 @@ import numpy as np
 from . import ui
 from .audio import Microphone, Player, looks_like_headphones
 from .backends import create_backend
-from .config import VOICES, Profile, Settings, find_profile, load_preferences, save_preference
+from .config import LANGUAGE_NAMES, VOICES, Profile, Settings, find_profile, load_preferences, save_preference
 from .errors import BackendError, FatalBackendError, ReconnectNow
 from .hotkeys import Hotkeys
 from .memory import MemoryStore
@@ -40,6 +40,31 @@ def is_voice(chunk: bytes) -> bool:
     """Rough 'someone is talking' check on one mic chunk (loud enough to be speech, not room noise)."""
     samples = np.frombuffer(chunk, dtype=np.int16)
     return bool(samples.size) and float(np.sqrt(np.mean(samples.astype(np.float32) ** 2))) >= VOICE_RMS
+
+
+REPEAT_EXAMPLES = {  # "say that again" in the first allowed language, as an example for the model
+    "es": "¿Me lo repites? No te entendí bien.", "en": "Sorry, could you say that again?",
+    "pt": "Pode repetir? Não entendi bem.", "ja": "すみません、もう一度言ってください。",
+}
+_SCRIPTS = {  # Unicode blocks of the writing systems the allowed languages can use
+    "latin": "[A-Za-zÀ-ɏ]", "kana": "[぀-ヿ]", "han": "[一-鿿]",
+    "hangul": "[가-힯]", "cyrillic": "[Ѐ-ӿ]", "arabic": "[؀-ۿ]",
+    "devanagari": "[ऀ-ॿ]",
+}
+_LANGUAGE_SCRIPTS = {
+    "ja": {"kana", "han"}, "zh": {"han"}, "ko": {"hangul"}, "ru": {"cyrillic"}, "ar": {"arabic"},
+    "hi": {"devanagari"},  # everything else in LANGUAGE_NAMES is written in Latin letters
+}
+
+
+def unexpected_script(text: str, languages: list[str]) -> bool:
+    """True if a transcript is written in a script none of the allowed languages uses, e.g. noise transcribed
+    as Chinese. Chinese characters without any Japanese kana count as Chinese unless 'zh' is allowed."""
+    allowed = set().union(*(_LANGUAGE_SCRIPTS.get(code, {"latin"}) for code in languages))
+    found = {script for script, pattern in _SCRIPTS.items() if re.search(pattern, text)}
+    if "han" in found and "kana" not in found and "zh" not in languages:
+        return True
+    return bool(found - allowed)
 
 
 def clean_transcript(text: str) -> str:
@@ -138,6 +163,19 @@ class VoiceCompanionApp:
             memory.append("What you already know (from memory):\n" + summary)
         parts.append("\n".join(memory))
 
+        names = [LANGUAGE_NAMES[code] for code in s.languages]
+        allowed = ", ".join(names[:-1]) + (" or " if len(names) > 1 else "") + names[-1]
+        parts.append(
+            "## Languages\n"
+            f"Only ever speak {allowed}; never reply in any other language. The people you hear only speak "
+            f"{allowed}: if something sounds like another language (for example Chinese) or like unclear sounds, "
+            "it is noise or a mishearing, not a real request. Don't translate it or answer it"
+            + (": stay silent (call StaySilent)." if not self.profile.conversational else
+               "; if it might have been meant for you, briefly ask the user to repeat, in the language the "
+               f"conversation has been in, or in {names[0]} if there's no conversation yet "
+               f"(for example: \"{REPEAT_EXAMPLES.get(s.languages[0], 'Could you say that again?')}\").")
+        )
+
         if self.profile.coach:
             translating = self.profile.name in self.translate_all
             parts.append(
@@ -192,6 +230,9 @@ class VoiceCompanionApp:
 
     def show_user(self, text: str) -> None:
         text = clean_transcript(text)
+        if text and unexpected_script(text, self.settings.languages):
+            ui.debug(f"(ignored: sounds transcribed in another language: {text})")
+            return  # noise read as, say, Chinese: don't show it or keep it in the conversation history
         if text:
             self.last_activity = time.monotonic()
             self._heard_user()

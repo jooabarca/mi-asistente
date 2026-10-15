@@ -128,7 +128,9 @@ class GeminiBackend(Backend):
                 ),
                 tools=[types.Tool(function_declarations=function_declarations(self.app.tool_schemas))]
                 + ([types.Tool(google_search=types.GoogleSearch())] if self.google_search else []),
-                input_audio_transcription=types.AudioTranscriptionConfig(),
+                # Only the allowed languages, so noise isn't transcribed as, say, Chinese.
+                input_audio_transcription=types.AudioTranscriptionConfig(
+                    language_codes=list(self.app.settings.languages)),
                 output_audio_transcription=types.AudioTranscriptionConfig(),
                 realtime_input_config=types.RealtimeInputConfig(
                     automatic_activity_detection=types.AutomaticActivityDetection(

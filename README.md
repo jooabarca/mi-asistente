@@ -200,7 +200,7 @@ You are a friendly English conversation partner...
 | `provider` | `gemini` or `openai`. |
 | `active_profile` | Profile at startup. |
 | `gemini.model` / `openai.model` | Model per provider. Check [Gemini models](https://ai.google.dev/gemini-api/docs/models) / [OpenAI models](https://developers.openai.com/api/docs/models) when new versions appear. |
-| `gemini.voice` / `openai.voice` | Gemini: Kore, Puck, Charon, Fenrir, Aoede, Leda, Orus, Zephyr, … OpenAI: marin, cedar, alloy, ash, ballad, coral, echo, sage, shimmer, verse. |
+| `gemini.voice` / `openai.voice` | Gemini: 30 voices; the window's **Voz** menu labels each one as a woman's or man's voice (Google's official list), e.g. Kore (woman), Puck (man). OpenAI: marin, cedar, alloy, ash, ballad, coral, echo, sage, shimmer, verse (no official genders). |
 | `gemini.google_search` | `auto` (default): use Google Search when the key's plan allows it (paid keys), otherwise continue without it. `off`: never ask. Wikipedia lookups work either way. |
 | `gemini.max_context_tokens` | How much recent conversation it keeps and re-reads for every reply (1 minute of talk ≈ 1,700 tokens). The default 8000 keeps about the last 4–5 minutes, which suits in-the-moment questions and comments. Use 32000 for long, flowing conversations. Smaller is cheaper per reply. Minimum 2000. |
 | `max_response_length_hint` | Extra length rule added to every profile, e.g. *"Never more than 20 words."* |
@@ -209,6 +209,7 @@ You are a friendly English conversation partner...
 | `audio.echo_guard` | Starting value for speaker mode until you use the Altavoz / Audífonos switch in the window, which then wins. `auto` (default) is on for speakers and off when the output device name contains headphones, headset, buds and so on. `on` / `off` force it. Wired headphones in the PC's jack often still show up as "Speakers", so just use the switch. |
 | `turn_detection` | `silence_duration_ms` (raise it if it cuts you off) and `prefix_padding_ms` apply to both. Gemini also has `start_sensitivity` / `end_sensitivity` (`low` / `high`). OpenAI also has `type`, `threshold` and `eagerness`. |
 | `quiet_hours` | During these hours there's no greeting, and proactive profiles (FactChecker) only answer direct questions. |
+| `languages` | The only languages it listens for and speaks (default `[es, en, pt, ja]`). Speech is transcribed with those languages only. Anything that still comes out in another script, such as noise read as Chinese, is treated as noise: it's not shown, and the assistant asks you to repeat (in the listener modes it stays silent). |
 | `coach_nudge_seconds` | Coach modes: after this many seconds without an answer, it offers help once. `0` = never. |
 | `auto_sleep_minutes` | Fall asleep (disconnect) after this many minutes without conversation. `0` = never. |
 | `memory.auto_save_categories` | Folders the AI may save to **without being asked** (default: `AboutMe`, `Correction`, `Recommendation`). Explicit "remember…" requests are always saved. `[]` = only on request. |

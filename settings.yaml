@@ -22,6 +22,11 @@ auto_sleep_minutes: 0
 # help once, in your language (repeat slower, a hint, or a translation). 0 = never.
 coach_nudge_seconds: 8
 
+# The only languages it listens for and speaks. Anything that sounds like another language is
+# treated as noise (it asks you to repeat, or stays silent in the listener modes).
+# Codes: es, en, pt, ja, fr, it, de, zh, ko, ru, ar, hi, nl
+languages: [es, en, pt, ja]
+
 gemini:
   # Check https://ai.google.dev/gemini-api/docs/models for current Live models,
   # e.g. gemini-3.8-live (default), gemini-3.8-live-extended-thinking (smarter, slower).

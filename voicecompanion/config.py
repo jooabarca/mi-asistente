@@ -73,6 +73,12 @@ VOICES = {
     "openai": {"marin": "recomendada", "cedar": "recomendada", "alloy": "", "ash": "", "ballad": "", "coral": "",
                "echo": "", "sage": "", "shimmer": "", "verse": ""},
 }
+# Language codes allowed in settings.yaml `languages`, with the name the AI is told.
+LANGUAGE_NAMES = {
+    "es": "Spanish", "en": "English", "pt": "Portuguese", "ja": "Japanese", "fr": "French", "it": "Italian",
+    "de": "German", "zh": "Chinese", "ko": "Korean", "ru": "Russian", "ar": "Arabic", "hi": "Hindi", "nl": "Dutch",
+}
+
 # Female / male as Google lists them for these voices: https://docs.cloud.google.com/text-to-speech/docs/chirp3-hd
 # (OpenAI doesn't publish genders for its voices, so they are shown without one.)
 _GEMINI_WOMEN = {"Achernar", "Aoede", "Autonoe", "Callirrhoe", "Despina", "Erinome", "Gacrux", "Kore", "Laomedeia",
@@ -179,6 +185,8 @@ class Settings:
     greet_on_start: bool = True
     auto_sleep_minutes: int = 0  # 0 = never; otherwise go to sleep after this long without conversation
     coach_nudge_seconds: int = 8  # coach modes: offer help after this long without an answer; 0 = never
+    # The only languages the assistant hears and speaks (codes from LANGUAGE_NAMES).
+    languages: list = field(default_factory=lambda: ["es", "en", "pt", "ja"])
     openai: OpenAISettings = field(default_factory=OpenAISettings)
     gemini: GeminiSettings = field(default_factory=GeminiSettings)
     audio: AudioSettings = field(default_factory=AudioSettings)
@@ -265,6 +273,10 @@ def validate_settings(settings: Settings) -> None:
         )
     if not (isinstance(settings.gemini.max_context_tokens, int) and settings.gemini.max_context_tokens >= 2000):
         raise ConfigError("gemini.max_context_tokens must be a whole number of at least 2000.")
+    unknown = [code for code in settings.languages if code not in LANGUAGE_NAMES]
+    if not settings.languages or unknown:
+        raise ConfigError(f"languages must be a list of codes from: {', '.join(LANGUAGE_NAMES)}"
+                          + (f" (unknown: {', '.join(map(str, unknown))})" if unknown else ""))
     if settings.gemini.google_search not in (True, False, "auto"):
         raise ConfigError("gemini.google_search must be auto or off.")
     if settings.audio.echo_guard not in (True, False, "auto"):

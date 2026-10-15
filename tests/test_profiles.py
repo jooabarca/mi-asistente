@@ -98,6 +98,49 @@ def test_choosing_a_voice_saves_it_and_starts_a_fresh_session(tmp_path, monkeypa
     assert _app(tmp_path, "Default").settings.gemini.voice == "Sulafat"  # remembered next time
 
 
+def test_only_the_allowed_languages(tmp_path):
+    talk = _app(tmp_path, "Default")
+    rules = talk.build_instructions()
+    assert "Only ever speak Spanish, English, Portuguese or Japanese" in rules
+    assert "ask the user to repeat" in rules
+    listener = _app(tmp_path, "FactChecker").build_instructions()
+    assert "stay silent (call StaySilent)" in listener
+    config = talk.backend.build_config()
+    assert config.input_audio_transcription.language_codes == ["es", "en", "pt", "ja"]
+
+
+@pytest.mark.parametrize("text,foreign", [
+    ("¿Cuál es la capital de Portugal?", False),
+    ("Where is the station?", False),
+    ("Eu estou muito feliz", False),
+    ("昨日、友達と映画を見ました。", False),       # Japanese: kanji with kana
+    ("今天天气怎么样？我们去公园吧。", True),       # Chinese: Han characters, no kana
+    ("안녕하세요", True),                         # Korean
+    ("Привет, как дела?", True),                 # Russian
+])
+def test_transcripts_in_other_scripts_count_as_noise(text, foreign):
+    from voicecompanion.app import unexpected_script
+
+    assert unexpected_script(text, ["es", "en", "pt", "ja"]) is foreign
+    assert unexpected_script("今天天气怎么样", ["es", "zh"]) is False  # allowed when Chinese is on the list
+
+
+def test_noise_read_as_chinese_is_not_shown(tmp_path, capsys):
+    app = _app(tmp_path, "Default")
+    app.show_user("今天天气怎么样？")
+    app.show_user("Hola")
+    assert app.history == [("User", "Hola")]
+
+
+def test_unknown_language_code_is_rejected(tmp_path):
+    from voicecompanion.config import ConfigError
+
+    path = tmp_path / "settings.yaml"
+    path.write_text("languages: [es, klingon]\n", encoding="utf-8")
+    with pytest.raises(ConfigError, match="klingon"):
+        load_settings(path)
+
+
 def test_voice_menu_shows_women_then_men():
     from voicecompanion.config import VOICE_GENDERS
     from voicecompanion.gui import voice_labels
