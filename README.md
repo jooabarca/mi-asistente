@@ -8,7 +8,9 @@ Its listener modes don't chat. They listen in the background during meetings or 
 |---|---|---|
 | ![Conversation](docs/screenshots/conversation-light.png) | ![Saved things](docs/screenshots/saved-things-light.png) | ![Fact checker](docs/screenshots/fact-checker-dark.png) |
 
-*Built with Python, asyncio, the Gemini Live API (google-genai) / OpenAI Realtime API, sounddevice + numpy, SQLite, customtkinter, and pytest (85 offline tests, including scripted server-event flows).*
+It's also a patient conversation partner for learning **English, Spanish, Portuguese or Japanese**. It talks with you in the language, corrects clear mistakes on the spot, and saves them in a *Correcciones* folder so you can review them.
+
+*Built with Python, asyncio, the Gemini Live API (google-genai) / OpenAI Realtime API, sounddevice + numpy, SQLite, customtkinter, and pytest (89 offline tests, including scripted server-event flows).*
 
 - **The "Mi Asistente" window:** a calm, warm design that follows Windows light or dark mode. It has:
   - a status card (Te escucho / Hablando / Micrófono en pausa / Descansando);
@@ -147,12 +149,15 @@ Gemini expects 16 kHz audio from the microphone, and OpenAI expects 24 kHz; both
 
 ## 6. Editing profiles
 
-The app comes with four modes (profiles):
+The app comes with seven modes (profiles):
 
 | Mode (in the window) | File | Converses? | What it does |
 |---|---|---|---|
 | Conversación | `Default.md` | Yes | Short, direct answers in your language. |
 | Coach de inglés | `EnglishCoach.md` | Yes | Talks in English and corrects clear mistakes ("Say X, not Y"). |
+| Coach de español | `SpanishCoach.md` | Yes | For Spanish learners: talks in Spanish and corrects ser/estar, agreement, tenses… ("Di X, no Y"). |
+| Coach de portugués | `PortugueseCoach.md` | Yes | Brazilian Portuguese, with extra attention to the "portuñol" mistakes Spanish speakers make ("Diga X, não Y"). |
+| Coach de japonés | `JapaneseCoach.md` | Yes | Simple, polite Japanese at your level. It corrects particles and conjugations, and explains in your language when you're stuck. |
 | Verificador de datos | `FactChecker.md` | **No** | Listens in the background (meetings, calls). It warns in a few words when something said is clearly false, and gives a neutral *"Contrapunto:"* when someone states a controversial opinion as settled. |
 | Verificador + datos útiles | `FactInsights.md` | **No** | Same as the fact checker, plus an occasional short, useful note starting with *"Dato:"* / *"Tip:"*. |
 
@@ -165,6 +170,7 @@ Each file in `profiles/` is one profile: YAML front matter followed by the syste
 ```markdown
 ---
 name: EnglishCoach                         # internal name, used by --profile
+order: 10                                  # position in the window's list (lower first)
 label: Coach de inglés                     # name shown in the window
 aliases: [english coach, coach, english]   # extra names you can say to switch
 description: Conversa contigo en inglés…   # shown in the window, and told to the AI

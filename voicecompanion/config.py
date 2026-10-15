@@ -46,8 +46,10 @@ CATEGORIES = (
     Category("Idea", "Ideas", "🧠", "The user's own ideas and projects to think about later.",
              "Tus ideas y proyectos para pensar más tarde."),
     Category("Shopping", "Compras", "🛒", "Things to buy.", "Cosas por comprar."),
-    Category("Correction", "Correcciones", "✏", "English mistakes the user made, as 'Say X, not Y'.",
-             "Tus errores de inglés corregidos, para no repetirlos."),
+    Category("Correction", "Correcciones", "✏",
+             "Language mistakes the user made while practicing (English, Spanish, Portuguese, Japanese…), "
+             "as 'Say X, not Y', starting with the language.",
+             "Tus errores de idiomas corregidos (inglés, español, portugués, japonés…), para no repetirlos."),
     Category("Opinion", "Opiniones", "💬", "The user's opinions and preferences on topics.",
              "Lo que piensas sobre distintos temas."),
     Category("Note", "Notas", "📝", "Anything else worth keeping.", "Todo lo demás."),
@@ -324,6 +326,7 @@ class Profile:
     proactive: bool = False  # speaks up without being asked (affected by quiet hours)
     label: str = ""  # name shown in the app, e.g. "Verificador de datos"
     conversational: bool = True  # False = background listener: only interjects, never chats
+    order: int = 50  # position in the app's mode list (lower first)
     path: Path | None = None
 
 
@@ -352,19 +355,18 @@ def parse_profile(text: str, fallback_name: str, path: Path | None = None) -> Pr
         proactive=bool(meta.get("proactive", False)),
         label=str(meta.get("label") or name),
         conversational=bool(meta.get("conversational", True)),
+        order=int(meta.get("order", 50)),
         path=path,
     )
 
 
 def load_profiles(directory: Path | None = None) -> dict[str, Profile]:
     directory = directory or ROOT / "profiles"
-    profiles: dict[str, Profile] = {}
-    for path in sorted(directory.glob("*.md")):
-        profile = parse_profile(path.read_text(encoding="utf-8"), path.stem, path)
-        profiles[profile.name] = profile
-    if not profiles:
+    loaded = [parse_profile(path.read_text(encoding="utf-8"), path.stem, path)
+              for path in sorted(directory.glob("*.md"))]
+    if not loaded:
         raise ConfigError(f"No profiles found in {directory}. Add at least one .md file.")
-    return profiles
+    return {p.name: p for p in sorted(loaded, key=lambda p: (p.order, p.name))}
 
 
 def _normalize(text: str) -> str:

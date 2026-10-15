@@ -19,6 +19,14 @@ def test_every_profile_has_a_label_and_description(profiles):
         assert profile.label and profile.description, profile.name
 
 
+def test_language_coaches_and_mode_order(profiles):
+    assert list(profiles) == ["Default", "EnglishCoach", "SpanishCoach", "PortugueseCoach", "JapaneseCoach",
+                              "FactChecker", "FactInsights"]  # conversation, the 4 coaches, then the listeners
+    for name, correction in [("EnglishCoach", "Say X, not Y"), ("SpanishCoach", "Di X, no Y"),
+                             ("PortugueseCoach", "Diga X, não Y"), ("JapaneseCoach", "見ました")]:
+        assert profiles[name].conversational and correction in profiles[name].prompt
+
+
 def test_listener_modes_are_not_conversational(profiles):
     assert not profiles["FactChecker"].conversational and not profiles["FactInsights"].conversational
     assert profiles["Default"].conversational and profiles["EnglishCoach"].conversational
@@ -35,6 +43,9 @@ def test_listener_modes_are_not_conversational(profiles):
     ("datos utiles", "FactInsights"),
     ("fact checker plus", "FactInsights"),
     ("Coach de inglés", "EnglishCoach"),
+    ("coach de portugués", "PortugueseCoach"),
+    ("practicar japonés", "JapaneseCoach"),
+    ("learn spanish", "SpanishCoach"),
     ("conversación", "Default"),
 ])
 def test_find_profile_by_label_or_alias(profiles, spoken, name):
