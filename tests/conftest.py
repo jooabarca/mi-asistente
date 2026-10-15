@@ -20,9 +20,13 @@ def open_window(*args):
 
     from voicecompanion.gui import MainWindow
 
-    try:
-        return MainWindow(*args)
-    except tkinter.TclError as exc:
-        if "display" in str(exc).lower():
-            pytest.skip("no display")
-        raise
+    for attempt in range(3):
+        try:
+            return MainWindow(*args)
+        except tkinter.TclError as exc:
+            if "display" in str(exc).lower():
+                pytest.skip("no display")
+            # Creating many Tk windows in one test process sometimes fails to read Tcl's init.tcl on Windows
+            # ("couldn't read file ... No error"); the app itself only ever creates one window.
+            if "init.tcl" not in str(exc) or attempt == 2:
+                raise

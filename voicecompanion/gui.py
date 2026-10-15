@@ -18,6 +18,7 @@ import customtkinter as ctk
 
 from . import ui
 from .config import APP_NAME, CATEGORIES, CATEGORY_BY_NAME, VOICES
+from .logs import FreezeWatchdog, log
 from .memory import SOURCE_AUTO, SOURCE_MANUAL, MemoryItem, MemoryStore, normalize_due_at
 
 ICON_PATH = Path(__file__).with_name("logo.ico")  # window, taskbar and desktop shortcut
@@ -64,7 +65,8 @@ MONTHS_LONG = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "
 SOURCES = {"UserRequest": "lo pediste tú", SOURCE_AUTO: "lo guardé yo", SOURCE_MANUAL: "añadido a mano"}
 MODE_SPEAKER, MODE_HEADSET = "🔊 Altavoz", "🎧 Audífonos"
 MAX_ITEMS_SHOWN = 200
-MAX_BUBBLES = 150
+MAX_BUBBLES = 80  # older chat lines are removed; each bubble is several widgets
+MAX_LINES_PER_TICK = 10
 
 
 def format_date(value: str | None, with_weekday: bool = False) -> str:
@@ -98,7 +100,7 @@ def greeting(now: datetime | None = None) -> str:
 
 class MainWindow(ctk.CTk):
     def __init__(self, app, memory: MemoryStore, events: "queue.Queue", worker: threading.Thread | None,
-                 result: dict):
+                 result: dict, watchdog: FreezeWatchdog | None = None):
         ctk.set_appearance_mode("system")
         super().__init__(fg_color=CREAM)
         self.app = app
@@ -111,6 +113,8 @@ class MainWindow(ctk.CTk):
         self.error_shown = False
         self.closing = False
         self.bubbles: list = []
+        self.watchdog = watchdog
+        self._shown: dict[str, dict] = {}  # last options given to each widget, see _set()
 
         self.title(APP_NAME)
         if ICON_PATH.exists():
@@ -308,6 +312,8 @@ class MainWindow(ctk.CTk):
     def _append_line(self, kind: str, text: str, stamp: str) -> None:
         if kind not in ("user", "assistant", "tool", "warn", "error"):
             return  # connection details stay in the console; the status card shows the state
+        if kind == "user" and not self.app.profile.conversational:
+            return  # listener modes: in a meeting that would be every sentence everyone says; show only the notes
         if self.chat_empty is not None:
             self.chat_empty.destroy()
             self.chat_empty = None
@@ -490,9 +496,9 @@ class MainWindow(ctk.CTk):
         wanted = MODE_SPEAKER if speaker else MODE_HEADSET
         if self.mode_switch.get() != wanted:
             self.mode_switch.set(wanted)
-        self.mode_hint.configure(
-            text="Mientras hablo no te escucho, para no oírme a mí misma." if speaker
-            else "Puedes interrumpirme cuando quieras.")
+        self._set(self.mode_hint, "mode_hint",
+                  text="Mientras hablo no te escucho, para no oírme a mí misma." if speaker
+                  else "Puedes interrumpirme cuando quieras.")
 
     # ================================================================== polling
 
@@ -500,17 +506,28 @@ class MainWindow(ctk.CTk):
         if self.closing:
             return
         try:
-            while True:
-                self._append_line(*self.events.get_nowait())
-        except queue.Empty:
-            pass
-        self._update_status()
-        self._refresh_folders()
-        self.after(150, self._tick)
+            if self.watchdog is not None:
+                self.watchdog.beat()
+            for _ in range(MAX_LINES_PER_TICK):  # a burst of lines is spread over a few refreshes
+                try:
+                    self._append_line(*self.events.get_nowait())
+                except queue.Empty:
+                    break
+            self._update_status()
+            self._refresh_folders()
+        finally:
+            self.after(150, self._tick)  # keep refreshing even if something above failed (it is logged)
 
-    def _paint_button(self, button: ctk.CTkButton, enabled: bool, color, hover) -> None:
-        button.configure(state="normal" if enabled else "disabled", fg_color=color if enabled else DISABLED,
-                         hover_color=hover)
+    def _set(self, widget, key: str, **options) -> None:
+        """configure() only when something changed: customtkinter redraws the whole widget on every
+        configure(), and doing that ~7 times a second for every button kept the window busy for nothing."""
+        if self._shown.get(key) != options:
+            self._shown[key] = options
+            widget.configure(**options)
+
+    def _paint_button(self, button: ctk.CTkButton, key: str, enabled: bool, color, hover, **extra) -> None:
+        self._set(button, key, state="normal" if enabled else "disabled", fg_color=color if enabled else DISABLED,
+                  hover_color=hover, **extra)
 
     def _update_status(self) -> None:
         error = self.result.get("error")
@@ -518,30 +535,34 @@ class MainWindow(ctk.CTk):
         title, hint, tint, dot = STATES.get(state, STATES["starting"])
         if state == "speaking":
             hint = "Habla y te escucho." if not self.app.echo_guard else "Termino y te escucho."
-        self.status_card.configure(fg_color=tint)
-        self.status_text.configure(text=title)
-        self.status_hint.configure(text=hint)
-        self.status_dot.configure(text_color=dot)
+        self._set(self.status_card, "status_card", fg_color=tint)
+        self._set(self.status_text, "status_text", text=title)
+        self._set(self.status_hint, "status_hint", text=hint)
+        self._set(self.status_dot, "status_dot", text_color=dot)
 
         running = state not in ("stopped", "error", "starting")
         muted = self.app.muted
-        self.mute_button.configure(text="🎙  Activar micrófono" if muted else "🔇  Pausar micrófono")
-        self._paint_button(self.mute_button, running, ROSE if muted else SAGE, ROSE_DARK if muted else SAGE_DARK)
-        self._paint_button(self.sleep_button, running and not self.app.sleeping, LAVENDER, LAVENDER_DARK)
-        self._paint_button(self.wake_button, running and self.app.sleeping, HONEY, HONEY_DARK)
+        self._paint_button(self.mute_button, "mute", running, ROSE if muted else SAGE,
+                           ROSE_DARK if muted else SAGE_DARK,
+                           text="🎙  Activar micrófono" if muted else "🔇  Pausar micrófono")
+        self._paint_button(self.sleep_button, "sleep", running and not self.app.sleeping, LAVENDER, LAVENDER_DARK)
+        self._paint_button(self.wake_button, "wake", running and self.app.sleeping, HONEY, HONEY_DARK)
         self._update_mode()
         self._update_profile()
         voice_label = self._voice_label(self.app.settings.voice)
         if self.voice_menu.get() != voice_label:
             self.voice_menu.set(voice_label)
-        if self.hello.cget("text") != greeting():
-            self.hello.configure(text=greeting())
+        self._set(self.hello, "hello", text=greeting())
 
         responses = self.app.usage.totals.responses
-        self.usage_label.configure(text=f"Esta sesión: {responses} respuesta{'' if responses == 1 else 's'}")
+        self._set(self.usage_label, "usage", text=f"Esta sesión: {responses} respuesta{'' if responses == 1 else 's'}")
         if error and not self.error_shown:
             self.error_shown = True
             messagebox.showerror(APP_NAME, str(error), parent=self)
+
+    def report_callback_exception(self, exc_type, exc, tb) -> None:
+        """Tk callback errors would vanish without a console: log them instead."""
+        log.error("Error in the window", exc_info=(exc_type, exc, tb))
 
     def _on_close(self) -> None:
         self.closing = True
@@ -578,8 +599,11 @@ def run_gui(app, memory: MemoryStore) -> int:
             pass
     worker = threading.Thread(target=conversation, name="conversation", daemon=True)
     worker.start()
-    window = MainWindow(app, memory, events, worker, result)
+    watchdog = FreezeWatchdog()
+    window = MainWindow(app, memory, events, worker, result, watchdog)
+    watchdog.start()
     window.mainloop()
+    watchdog.stop()
     app.stop()
     worker.join(timeout=5)
     return 1 if result.get("error") else 0

@@ -61,6 +61,10 @@ def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     one_shot = args.list_devices or args.list_profiles or args.test_audio or args.check_connection
     gui = not args.console and not one_shot
+    if not one_shot:
+        from voicecompanion.logs import setup_logging
+
+        setup_logging()  # logs/mi-asistente.log: the only trace of problems when started from the shortcut
     memory = None
     try:
         settings = load_settings(args.settings)
